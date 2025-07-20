@@ -110,7 +110,9 @@ namespace Schema
                         if (CurrentPattern == PlacementPattern.PP)
                         {
                             int indexOnLevel = levelPlacementIndex[placementKey];
-                            x = GetXCoordinate(sectionNumber, minX, maxX, offset, rightOffset, spacingFt, indexOnLevel);
+                            x = sectionNumber == 2
+                                ? maxX - rightOffset - (indexOnLevel * spacingFt)
+                                : minX + offset + (indexOnLevel * spacingFt);
 
                             var groupKey = (entry.LevelName, entry.SectionNumber);
                             if (!groupedByLevelAndSection.TryGetValue(groupKey, out var ahelaList))
@@ -131,9 +133,19 @@ namespace Schema
                             double adjustedBottomY = bottomY + verticalMarginFt;
                             double adjustedBandHeight = adjustedTopY - adjustedBottomY;
 
-                            y = total == 1
-                                ? (adjustedTopY + adjustedBottomY) / 2.0
-                                : adjustedTopY - ((index + 0.5) * (adjustedBandHeight / total));
+                            // For section 2, distribute from bottom up
+                            if (sectionNumber == 2)
+                            {
+                                y = total == 1
+                                    ? (adjustedTopY + adjustedBottomY) / 2.0
+                                    : adjustedBottomY + ((index + 0.5) * (adjustedBandHeight / total));
+                            }
+                            else
+                            {
+                                y = total == 1
+                                    ? (adjustedTopY + adjustedBottomY) / 2.0
+                                    : adjustedTopY - ((index + 0.5) * (adjustedBandHeight / total));
+                            }
 
                             levelPlacementIndex[placementKey]++;
                         }
@@ -343,6 +355,12 @@ namespace Schema
             {
                 ahelaParam.Set(entry.AhelaNr ?? "");
             }
+
+            Parameter tekstParam = detail.LookupParameter("Tekst");
+            if (tekstParam != null && tekstParam.StorageType == StorageType.String && !tekstParam.IsReadOnly)
+            {
+                tekstParam.Set("PlacedByScript");
+            }
         }
 
         // Update SetParameters to support TP pattern Seadme Nr. in Comments
@@ -363,6 +381,12 @@ namespace Schema
             if (ahelaParam != null && ahelaParam.StorageType == StorageType.String && !ahelaParam.IsReadOnly)
             {
                 ahelaParam.Set(entry.AhelaNr ?? "");
+            }
+
+            Parameter tekstParam = detail.LookupParameter("Tekst");
+            if (tekstParam != null && tekstParam.StorageType == StorageType.String && !tekstParam.IsReadOnly)
+            {
+                tekstParam.Set("PlacedByScript");
             }
         }
 
@@ -422,9 +446,19 @@ namespace Schema
                 int index = ahelaList.IndexOf(ahelaNr);
                 int total = ahelaList.Count;
 
-                double y = total == 1
-                    ? (adjustedTopY + adjustedBottomY) / 2.0
-                    : adjustedTopY - ((index + 0.5) * (adjustedBandHeight / total));
+                double y;
+                if (sectionNumber == 2)
+                {
+                    y = total == 1
+                        ? (adjustedTopY + adjustedBottomY) / 2.0
+                        : adjustedBottomY + ((index + 0.5) * (adjustedBandHeight / total));
+                }
+                else
+                {
+                    y = total == 1
+                        ? (adjustedTopY + adjustedBottomY) / 2.0
+                        : adjustedTopY - ((index + 0.5) * (adjustedBandHeight / total));
+                }
 
                 // Flatten all entries by count, so each instance is placed individually
                 var allInstances = tpGroup
@@ -446,10 +480,14 @@ namespace Schema
 
                     int row = i / ItemsInRow;
                     int col = i % ItemsInRow;
-                    bool leftToRight = row % 2 == 0;
 
-                    int snakeCol = leftToRight ? col : (ItemsInRow - 1 - col);
-                    double x = minX + offset + (snakeCol * spacingFt);
+                    // For section 1: left to right, for section 2: right to left
+                    int snakeCol = sectionNumber == 2 ? (allInstances.Count - 1 - i) % ItemsInRow : col;
+
+                    double x = sectionNumber == 2
+                        ? maxX - rightOffset - (snakeCol * spacingFt)
+                        : minX + offset + (snakeCol * spacingFt);
+
                     double yWithRowOffset = y + (row * RowOffset * (1.0 / 304.8)); // places above
 
                     XYZ tpPoint = new XYZ(x, yWithRowOffset, 0);

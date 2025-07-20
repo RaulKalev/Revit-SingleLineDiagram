@@ -6,6 +6,7 @@ using Schema.ExternalEvents;
 using Newtonsoft.Json;
 using Schema.Helpers;
 using System;
+using Schema;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
@@ -569,6 +570,12 @@ namespace Schema
                 return;
             }
 
+            if (!double.TryParse(SpacingTextBox.Text, out double spacingMm))
+            {
+                TaskDialog.Show("Error", "Invalid spacing value.");
+                return;
+            }
+
             var selectedLevels = Levels?.Where(l => l.IsSelected).ToList() ?? new List<LevelEntry>();
             if (selectedLevels.Count == 0)
             {
@@ -576,13 +583,47 @@ namespace Schema
                 return;
             }
 
-            // Use the pre-initialized handler and event
-            drawLinesHandler.UiDoc = _uiDoc;
-            drawLinesHandler.TargetView = selectedView;
-            drawLinesHandler.MarginMm = marginMm;
-            drawLinesHandler.SelectedLevels = selectedLevels;
+            _drawLinesHandler.UiDoc = _uiDoc;
+            _drawLinesHandler.TargetView = selectedView;
+            _drawLinesHandler.MarginMm = marginMm;
+            _drawLinesHandler.SpacingMm = spacingMm;
 
-            drawLinesEvent.Raise();
+            if (TPCheckBox.IsChecked == true)
+            {
+                // For TP, draw lines for each row (section) where the same AhelaNr appears
+                // Group FireAlarmElements by SectionNumber and LevelName
+                var grouped = FireAlarmElements
+                    .Where(entry => entry.IsSelected)
+                    .GroupBy(entry => new { entry.LevelName, entry.SectionNumber })
+                    .OrderBy(g => GetLevelSortKey(g.Key.LevelName))
+                    .ThenBy(g => g.Key.SectionNumber)
+                    .ToList();
+
+                var levelsForRows = new List<Level>();
+                foreach (var group in grouped)
+                {
+                    var level = FindLevelByName(group.Key.LevelName);
+                    if (level != null)
+                    {
+                        // Add the level for each section (row)
+                        levelsForRows.Add(level);
+                    }
+                }
+                _drawLinesHandler.SelectedLevels = levelsForRows;
+            }
+            else
+            {
+                _drawLinesHandler.SelectedLevels = selectedLevels
+                    .Select(le => FindLevelByName(le.Name))
+                    .Where(l => l != null)
+                    .ToList();
+            }
+
+            _drawLinesHandler.CurrentPattern = PPCheckBox.IsChecked == true
+                ? PlacementPattern.PP
+                : PlacementPattern.TP;
+
+            _drawLinesEvent.Raise();
         }
 
         private void InitializeDrawHandler()
@@ -682,6 +723,7 @@ namespace Schema
         {
             var entries = FireAlarmCollector.GetFireAlarmElements(doc);
 
+            // Always apply section logic for both PP and TP
             if (TPCheckBox.IsChecked == true)
             {
                 FireAlarmElements = new ObservableCollection<FireAlarmEntry>(GetSortedFlatFireAlarmEntries(GetFlatFireAlarmEntries(entries)));
@@ -691,6 +733,35 @@ namespace Schema
                 FireAlarmElements = new ObservableCollection<FireAlarmEntry>(GetGroupedByLevelAhelaFamily(entries));
             }
             SystemDataGrid.ItemsSource = FireAlarmElements;
+
+            // Restore selection and section state from config after loading
+            string subsystemKey = GetCurrentSubsystemKey();
+            string viewName = (ViewComboBox.SelectedItem as ViewDrafting)?.Name ?? "UnnamedView";
+            string stageKey = PPCheckBox.IsChecked == true ? "PP" : "TP";
+            if (_config.Projects.TryGetValue(ProjectKey, out var viewsDict) &&
+                viewsDict.TryGetValue(viewName, out var stagesDict) &&
+                stagesDict.TryGetValue(stageKey, out var projectConfig) &&
+                projectConfig.Subsystems.TryGetValue(subsystemKey, out var subsystem))
+            {
+                if (subsystem.SystemSelection != null)
+                {
+                    foreach (var entry in FireAlarmElements)
+                    {
+                        var key = $"{entry.FamilyName}|{entry.TypeName}|{entry.LevelName}|{entry.AhelaNr}";
+                        if (subsystem.SystemSelection.TryGetValue(key, out bool isSelected))
+                            entry.IsSelected = isSelected;
+                    }
+                }
+                if (subsystem.SystemSections != null)
+                {
+                    foreach (var entry in FireAlarmElements)
+                    {
+                        var key = $"{entry.FamilyName}|{entry.TypeName}|{entry.LevelName}|{entry.AhelaNr}";
+                        if (subsystem.SystemSections.TryGetValue(key, out int section))
+                            entry.SectionNumber = section;
+                    }
+                }
+            }
         }
         private List<FireAlarmEntry> GetSortedFlatFireAlarmEntries(List<FireAlarmEntry> entries)
         {
@@ -701,7 +772,7 @@ namespace Schema
                 .ThenBy(e => e.FamilyName)
                 .ToList();
         }
-
+            
         private void HandleSubsystemCheckboxChange(string subsystemKey, CheckBox senderCheckbox)
         {
             if (_doc == null) return;
@@ -1033,6 +1104,26 @@ namespace Schema
         private void SystemDataGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
 
+        }
+
+        private void SetSectionNumber_Click(object sender, RoutedEventArgs e)
+        {
+            if (int.TryParse(BulkValueTextBox.Text, out int sectionValue))
+            {
+                foreach (FireAlarmEntry entry in SystemDataGrid.SelectedItems)
+                {
+                    entry.SectionNumber = sectionValue;
+                }
+            }
+        }
+
+        private Level FindLevelByName(string name)
+        {
+            // Use the Revit API to find the Level element by name
+            return new FilteredElementCollector(_doc)
+                .OfClass(typeof(Level))
+                .Cast<Level>()
+                .FirstOrDefault(l => l.Name == name);
         }
     }
 }
