@@ -45,6 +45,7 @@ namespace Schema.ExternalEvents
             double spacingFt = SpacingMm * mmToFt;
             double offset = StartOffsetMm * mmToFt;
             double rightOffset = RightOffsetMm * mmToFt;
+            double verticalMarginFt = VerticalMarginMm * mmToFt;
 
             // 1. Get boundary box from vertical xx_Boundary lines
             var boundaryLines = new FilteredElementCollector(doc, TargetView.Id)
@@ -108,6 +109,18 @@ namespace Schema.ExternalEvents
                 levelYMap[selectedLevels[i].Name] = placementHeights[i];
             }
 
+            // Create fast lookup for level indices
+            var levelIndexMap = selectedLevels
+                .Select((lvl, idx) => new { lvl.Name, idx })
+                .ToDictionary(x => x.Name, x => x.idx);
+
+            // Cache all detail symbols once for fast lookup
+            var symbolLookup = new FilteredElementCollector(doc)
+                .OfClass(typeof(FamilySymbol))
+                .OfCategory(BuiltInCategory.OST_DetailComponents)
+                .Cast<FamilySymbol>()
+                .ToDictionary(s => $"{s.Family.Name} : {s.Name}", s => s);
+
             using (Transaction tx = new Transaction(doc, "Place Detail Items"))
             {
                 tx.Start();
@@ -149,16 +162,11 @@ namespace Schema.ExternalEvents
                         continue;
 
                     string[] split = entry.SelectedDetailType.DisplayName.Split(new[] { " : " }, StringSplitOptions.None);
-                    if (split.Length != 2) continue;
+                    if (split.Length != 2)
+                        continue;
 
-                    string famName = split[0];
-                    string typeName = split[1];
-
-                    FamilySymbol symbol = new FilteredElementCollector(doc)
-                        .OfClass(typeof(FamilySymbol))
-                        .OfCategory(BuiltInCategory.OST_DetailComponents)
-                        .Cast<FamilySymbol>()
-                        .FirstOrDefault(f => f.Family.Name == famName && f.Name == typeName);
+                    if (!symbolLookup.TryGetValue(entry.SelectedDetailType.DisplayName, out FamilySymbol symbol))
+                        continue;
 
                     if (symbol == null)
                         continue;
@@ -203,15 +211,13 @@ namespace Schema.ExternalEvents
                     int total = ahelaList.Count;
 
                     // Compute spacing within the height band (from topY to bottomY)
-                    int levelIndex = selectedLevels.FindIndex(l => l.Name == entry.LevelName);
-                    if (levelIndex == -1 || levelIndex + 1 >= levelLineYs.Count)
+                    if (!levelIndexMap.TryGetValue(entry.LevelName, out int levelIndex))
+                        continue;
+                    if (levelIndex + 1 >= levelLineYs.Count)
                         continue;
 
                     double topY = levelLineYs[levelIndex];
                     double bottomY = levelLineYs[levelIndex + 1];
-
-                    // Convert margin to feet
-                    double verticalMarginFt = VerticalMarginMm / 304.8;
 
                     // Shrink the band vertically by the top/bottom margin
                     double adjustedTopY = topY - verticalMarginFt;
