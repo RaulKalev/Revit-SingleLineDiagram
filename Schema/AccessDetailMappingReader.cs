@@ -8,7 +8,7 @@ namespace Schema.Helpers
         private static readonly Dictionary<string, string> _mapping = new Dictionary<string, string>();
         private static bool _isLoaded = false;
 
-        public static void Load(string dbPath = null)
+        public static void Load(string dbPath)
         {
             if (_isLoaded) return;
             _isLoaded = true;
