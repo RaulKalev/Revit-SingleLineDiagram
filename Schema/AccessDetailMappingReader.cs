@@ -8,10 +8,16 @@ namespace Schema.Helpers
         private static readonly Dictionary<string, string> _mapping = new Dictionary<string, string>();
         private static bool _isLoaded = false;
 
-        public static void Load(string dbPath)
+        public static void Load(string dbPath = null)
         {
             if (_isLoaded) return;
             _isLoaded = true;
+
+            if (string.IsNullOrEmpty(dbPath))
+            {
+                string assemblyDir = System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+                dbPath = System.IO.Path.Combine(assemblyDir ?? string.Empty, "DetailMappings.accdb");
+            }
 
             string connectionString = $@"Provider=Microsoft.ACE.OLEDB.12.0;Data Source={dbPath};Persist Security Info=False;";
             using (var connection = new OleDbConnection(connectionString))
