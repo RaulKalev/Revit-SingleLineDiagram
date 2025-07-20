@@ -1,0 +1,96 @@
+﻿using Autodesk.Revit.DB;
+using Autodesk.Revit.DB.Electrical;
+using Schema.ExternalEvents;
+using Schema.Helpers;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Linq;
+
+namespace Schema.Collectors
+{
+    public static class SideCollector
+    {
+        public class SecurityDeviceEntry : INotifyPropertyChanged
+        {
+            public string FamilyName { get; set; }
+            public string TypeName { get; set; }
+            public string LevelName { get; set; }
+            public string AhelaNr { get; set; }
+            public int Count { get; set; }
+            public Element Element { get; set; }
+
+            public ObservableCollection<DetailTypeOption> AvailableDetailTypes { get; set; }
+
+            private DetailTypeOption _selectedDetailType;
+            public DetailTypeOption SelectedDetailType
+            {
+                get => _selectedDetailType;
+                set
+                {
+                    if (_selectedDetailType != value)
+                    {
+                        _selectedDetailType = value;
+                        OnPropertyChanged(nameof(SelectedDetailType));
+                    }
+                }
+            }
+
+            public event PropertyChangedEventHandler PropertyChanged;
+            protected void OnPropertyChanged(string propertyName) =>
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        public static List<SecurityDeviceEntry> GetSecurityDeviceElements(Document doc)
+        {
+            // Collect all detail symbols
+            var allDetailTypes = new FilteredElementCollector(doc)
+                .OfClass(typeof(FamilySymbol))
+                .OfCategory(BuiltInCategory.OST_DetailComponents)
+                .Cast<FamilySymbol>()
+                .Select(f => new DetailTypeOption
+                {
+                    DisplayName = $"{f.Family.Name} : {f.Name}",
+                    Id = f.Id.ToString()
+                })
+                .OrderBy(o => o.DisplayName)
+                .ToList();
+
+            return new FilteredElementCollector(doc)
+                .OfCategory(BuiltInCategory.OST_DataDevices)
+                .WhereElementIsNotElementType()
+                .OfType<FamilyInstance>()
+                .Where(e => e.Symbol.FamilyName != null &&
+                            e.Symbol.FamilyName.IndexOf("Side", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                .GroupBy(e => new
+                {
+                    e.Symbol.FamilyName,
+                    TypeName = e.Symbol.Name,
+                    LevelName = doc.GetElement(e.LevelId)?.Name ?? "N/A",
+                    AhelaNr = e.LookupParameter("Panel")?.AsString() ?? ""
+                })
+                .Select(g =>
+                {
+                    string defaultSymbolName = AccessDetailMappingReader.GetDetailSymbol(g.Key.FamilyName, g.Key.TypeName);
+                    var defaultOption = allDetailTypes.FirstOrDefault(opt => opt.DisplayName == defaultSymbolName);
+
+                    return new SecurityDeviceEntry
+                    {
+                        FamilyName = g.Key.FamilyName,
+                        TypeName = g.Key.TypeName,
+                        LevelName = g.Key.LevelName,
+                        AhelaNr = g.Key.AhelaNr,
+                        Count = g.Count(),
+                        Element = g.First(),
+                        AvailableDetailTypes = new ObservableCollection<DetailTypeOption>(allDetailTypes),
+                        SelectedDetailType = defaultOption ?? allDetailTypes.FirstOrDefault()
+                    };
+                })
+                // Use LevelNameComparer for sorting levels numerically
+                .OrderBy(e => e.LevelName, new LevelNameComparer())  // Sort levels numerically
+                .ThenBy(e => e.AhelaNr)  // Then by panel (AhelaNr)
+                .ThenBy(e => e.TypeName)
+                .ToList();
+        }
+    }
+}
