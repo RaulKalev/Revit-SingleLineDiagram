@@ -66,7 +66,8 @@ namespace Schema.Collectors
     {
         public static List<FireAlarmEntry> GetFireAlarmElements(Document doc)
         {
-            AccessDetailMappingReader.Load(@"C:\Users\mibil\EULE Dropbox\Raul Kalev\Me\Plugins\Schema\DetailMappings.accdb");
+            // Load detail mapping database from the executing assembly location
+            AccessDetailMappingReader.Load();
 
             var entries = new List<FireAlarmEntry>();
 
