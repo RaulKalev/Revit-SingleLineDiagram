@@ -6,7 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Schema.ExternalEvents
+namespace Schema
 {
     public class DetailTypeOption
     {
@@ -29,6 +29,9 @@ namespace Schema.ExternalEvents
 
         public string GetName() => "Place Detail Items";
         public int SectionCount { get; set; } = 1;
+        public int ItemsInRow { get; set; } = int.MaxValue;
+        public double RowOffset { get; set; } = 0;
+
         public enum HorizontalAlignment
         {
             Left,
@@ -36,10 +39,18 @@ namespace Schema.ExternalEvents
         }
         public HorizontalAlignment SectionAlignment { get; set; } = HorizontalAlignment.Left;
 
+        public enum PlacementPattern
+        {
+            PP, // Current pattern
+            TP  // New pattern
+        }
+
+        public PlacementPattern CurrentPattern { get; set; } = PlacementPattern.PP;
+
         public void Execute(UIApplication app)
         {
             try
-            {
+            {   
                 if (UiDoc == null || TargetView == null || FireAlarmEntries == null || LevelEntries == null)
                     return;
 
@@ -78,7 +89,6 @@ namespace Schema.ExternalEvents
 
                     var levelPlacementIndex = new Dictionary<Tuple<string, int, string>, int>();
                     var groupedByLevelAndSection = GroupEntriesByLevelAndSection(FireAlarmEntries);
-
                     var selectedEntries = FireAlarmEntries.Where(e => e.IsSelected).ToList();
 
                     foreach (var entry in selectedEntries)
@@ -95,35 +105,58 @@ namespace Schema.ExternalEvents
                         if (!levelPlacementIndex.ContainsKey(placementKey))
                             levelPlacementIndex[placementKey] = 0;
 
-                        int indexOnLevel = levelPlacementIndex[placementKey];
-                        double x = GetXCoordinate(sectionNumber, minX, maxX, offset, rightOffset, spacingFt, indexOnLevel);
+                        double x, y;
 
-                        var groupKey = (entry.LevelName, entry.SectionNumber);
-                        if (!groupedByLevelAndSection.TryGetValue(groupKey, out var ahelaList))
-                            continue;
+                        if (CurrentPattern == PlacementPattern.PP)
+                        {
+                            int indexOnLevel = levelPlacementIndex[placementKey];
+                            x = GetXCoordinate(sectionNumber, minX, maxX, offset, rightOffset, spacingFt, indexOnLevel);
 
-                        int index = ahelaList.IndexOf(entry.AhelaNr);
-                        int total = ahelaList.Count;
+                            var groupKey = (entry.LevelName, entry.SectionNumber);
+                            if (!groupedByLevelAndSection.TryGetValue(groupKey, out var ahelaList))
+                                continue;
 
-                        if (!levelIndexMap.TryGetValue(entry.LevelName, out int levelIndex))
-                            continue;
-                        if (levelIndex + 1 >= levelLineYs.Count)
-                            continue;
+                            int index = ahelaList.IndexOf(entry.AhelaNr);
+                            int total = ahelaList.Count;
 
-                        double topY = levelLineYs[levelIndex];
-                        double bottomY = levelLineYs[levelIndex + 1];
+                            if (!levelIndexMap.TryGetValue(entry.LevelName, out int levelIndex))
+                                continue;
+                            if (levelIndex + 1 >= levelLineYs.Count)
+                                continue;
 
-                        double adjustedTopY = topY - verticalMarginFt;
-                        double adjustedBottomY = bottomY + verticalMarginFt;
-                        double adjustedBandHeight = adjustedTopY - adjustedBottomY;
+                            double topY = levelLineYs[levelIndex];
+                            double bottomY = levelLineYs[levelIndex + 1];
 
-                        double y = total == 1
-                            ? (adjustedTopY + adjustedBottomY) / 2.0
-                            : adjustedTopY - ((index + 0.5) * (adjustedBandHeight / total));
+                            double adjustedTopY = topY - verticalMarginFt;
+                            double adjustedBottomY = bottomY + verticalMarginFt;
+                            double adjustedBandHeight = adjustedTopY - adjustedBottomY;
+
+                            y = total == 1
+                                ? (adjustedTopY + adjustedBottomY) / 2.0
+                                : adjustedTopY - ((index + 0.5) * (adjustedBandHeight / total));
+
+                            levelPlacementIndex[placementKey]++;
+                        }
+                        else // TP pattern
+                        {
+                            PlaceTPPattern(
+                                doc,
+                                selectedEntries,
+                                levelIndexMap,
+                                levelLineYs,
+                                levelYMap,
+                                symbolLookup,
+                                minX,
+                                maxX,
+                                offset,
+                                rightOffset,
+                                spacingFt,
+                                verticalMarginFt
+                            );
+                            break;
+                        }
 
                         XYZ point = new XYZ(x, y, 0);
-
-                        levelPlacementIndex[placementKey]++;
 
                         var detail = doc.Create.NewFamilyInstance(point, symbol, TargetView) as FamilyInstance;
 
@@ -309,6 +342,125 @@ namespace Schema.ExternalEvents
             if (ahelaParam != null && ahelaParam.StorageType == StorageType.String && !ahelaParam.IsReadOnly)
             {
                 ahelaParam.Set(entry.AhelaNr ?? "");
+            }
+        }
+
+        // Update SetParameters to support TP pattern Seadme Nr. in Comments
+        private void SetParameters(FamilyInstance detail, FireAlarmEntry entry, bool addSeadmeNrToComments = false)
+        {
+            Parameter userParam = detail.LookupParameter(TagParameterName);
+            if (userParam != null && userParam.StorageType == StorageType.String && !userParam.IsReadOnly)
+            {
+                string value = entry.Count.ToString();
+                if (addSeadmeNrToComments && !string.IsNullOrWhiteSpace(entry.Aadress))
+                {
+                    value = $"{entry.Aadress}";
+                }
+                userParam.Set(value);
+            }
+
+            Parameter ahelaParam = detail.LookupParameter("Ahela nr.");
+            if (ahelaParam != null && ahelaParam.StorageType == StorageType.String && !ahelaParam.IsReadOnly)
+            {
+                ahelaParam.Set(entry.AhelaNr ?? "");
+            }
+        }
+
+        // Add this new method to the PlaceDetailItemsHandler class
+        private void PlaceTPPattern(
+            Document doc,
+            List<FireAlarmEntry> selectedEntries,
+            Dictionary<string, int> levelIndexMap,
+            List<double> levelLineYs,
+            Dictionary<string, double> levelYMap,
+            Dictionary<string, FamilySymbol> symbolLookup,
+            double minX,
+            double maxX,
+            double offset,
+            double rightOffset,
+            double spacingFt,
+            double verticalMarginFt)
+        {
+            // Group by LevelName, SectionNumber, and AhelaNr
+            var tpGroups = selectedEntries
+                .Where(e => e.SelectedDetailType != null)
+                .GroupBy(e => (
+                    e.LevelName,
+                    e.SectionNumber,
+                    e.AhelaNr ?? ""
+                ));
+
+            var groupedByLevelAndSection = selectedEntries
+                .GroupBy(e => (e.LevelName, e.SectionNumber))
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Select(e => e.AhelaNr).Distinct().OrderBy(x => x).ToList()
+                );
+
+            foreach (var tpGroup in tpGroups)
+            {
+                string levelName = tpGroup.Key.LevelName;
+                int sectionNumber = tpGroup.Key.SectionNumber;
+                string ahelaNr = tpGroup.Key.Item3;
+
+                if (!levelIndexMap.TryGetValue(levelName, out int levelIndex))
+                    continue;
+                if (levelIndex + 1 >= levelLineYs.Count)
+                    continue;
+
+                double topY = levelLineYs[levelIndex];
+                double bottomY = levelLineYs[levelIndex + 1];
+
+                double adjustedTopY = topY - verticalMarginFt;
+                double adjustedBottomY = bottomY + verticalMarginFt;
+                double adjustedBandHeight = adjustedTopY - adjustedBottomY;
+
+                var groupKey = (levelName, sectionNumber);
+                if (!groupedByLevelAndSection.TryGetValue(groupKey, out var ahelaList))
+                    continue;
+
+                int index = ahelaList.IndexOf(ahelaNr);
+                int total = ahelaList.Count;
+
+                double y = total == 1
+                    ? (adjustedTopY + adjustedBottomY) / 2.0
+                    : adjustedTopY - ((index + 0.5) * (adjustedBandHeight / total));
+
+                // Flatten all entries by count, so each instance is placed individually
+                var allInstances = tpGroup
+                    .SelectMany(e => Enumerable.Range(0, e.Count).Select(_ => e))
+                    .OrderBy(e => {
+                        int seadmeNr;
+                        return int.TryParse(e.Aadress, out seadmeNr) ? seadmeNr : int.MaxValue;
+                    })
+                    .ThenBy(e => e.SelectedDetailType?.DisplayName ?? "")
+                    .ToList();
+
+                for (int i = 0; i < allInstances.Count; i++)
+                {
+                    var entry = allInstances[i];
+                    if (!IsEntryValid(entry, levelYMap, symbolLookup, out FamilySymbol tpSymbol, out double tpCenterY))
+                        continue;
+                    if (!tpSymbol.IsActive)
+                        tpSymbol.Activate();
+
+                    int row = i / ItemsInRow;
+                    int col = i % ItemsInRow;
+                    bool leftToRight = row % 2 == 0;
+
+                    int snakeCol = leftToRight ? col : (ItemsInRow - 1 - col);
+                    double x = minX + offset + (snakeCol * spacingFt);
+                    double yWithRowOffset = y + (row * RowOffset * (1.0 / 304.8)); // places above
+
+                    XYZ tpPoint = new XYZ(x, yWithRowOffset, 0);
+
+                    var tpDetail = doc.Create.NewFamilyInstance(tpPoint, tpSymbol, TargetView) as FamilyInstance;
+                    if (tpDetail != null)
+                    {
+                        SetParameters(tpDetail, entry, true);
+                        PlaceTag(tpDetail, tpPoint, doc);
+                    }
+                }
             }
         }
     }

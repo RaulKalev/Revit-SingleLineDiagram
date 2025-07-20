@@ -31,7 +31,8 @@ public class ProjectConfig
     public double VerticalMarginMm { get; set; } = 10.0;
     public double ControllerOffsetMm { get; set; } = 150;
     public string ControllerDetailTypeId { get; set; }
-
+    public int ItemsInRow { get; set; } = 20;
+    public double RowOffset { get; set; } = 500;
 }
 public class SubsystemConfig
 {

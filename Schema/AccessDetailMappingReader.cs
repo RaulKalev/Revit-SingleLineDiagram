@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Data.OleDb;
 
-namespace Schema.Helpers
+namespace Schema
 {
     public static class AccessDetailMappingReader
     {

@@ -41,7 +41,17 @@ namespace Schema.Collectors
             }
         }
 
-
+        // Add this property for Seadme Nr (Aadress)
+        private string _aadress;
+        public string Aadress
+        {
+            get => _aadress;
+            set
+            {
+                _aadress = value;
+                OnPropertyChanged(nameof(Aadress));
+            }
+        }
 
         public ObservableCollection<DetailTypeOption> AvailableDetailTypes { get; set; }
 
@@ -88,46 +98,31 @@ namespace Schema.Collectors
                 .OrderBy(o => o.DisplayName)
                 .ToList();
 
-            // ✅ Group by Level + Family + Type
-            var flatData = collector
-                .Select(fi => new
-                {
-                    Level = doc.GetElement(fi.LevelId)?.Name ?? "Unknown",
-                    Family = fi.Symbol?.Family?.Name ?? "<null>",
-                    Type = fi.Symbol?.Name ?? "<null>",
-                    AhelaNr = fi.LookupParameter("Ahela nr.")?.AsString() ?? "",
-                    Instance = fi
-                })
-                .ToList(); // 👈 Forces immediate evaluation
-
-            var grouped = flatData
-                .GroupBy(x => new { x.Level, x.Family, x.Type, x.AhelaNr })
-                .OrderBy(g => g.Key.Level, new LevelNameComparer())
-                .ThenBy(g => g.Key.Family)
-                .ThenBy(g => g.Key.Type)
-                .ThenBy(g => g.Key.AhelaNr);
-
-
-
-            foreach (var group in grouped)
+            // Instead of grouping, create one FireAlarmEntry per FamilyInstance
+            foreach (var fi in collector)
             {
-                string defaultSymbolName = AccessDetailMappingReader.GetDetailSymbol(group.Key.Family, group.Key.Type);
-                string ahelaNr = group.Key.AhelaNr;
+                string level = doc.GetElement(fi.LevelId)?.Name ?? "Unknown";
+                string family = fi.Symbol?.Family?.Name ?? "<null>";
+                string type = fi.Symbol?.Name ?? "<null>";
+                string ahelaNr = fi.LookupParameter("Ahela nr.")?.AsString() ?? "";
+                string seadmeNr = fi.LookupParameter("Seadme Nr.")?.AsString() ?? "";
 
+                string defaultSymbolName = AccessDetailMappingReader.GetDetailSymbol(family, type);
                 var defaultOption = allDetailTypes.FirstOrDefault(opt => opt.DisplayName == defaultSymbolName);
 
                 entries.Add(new FireAlarmEntry
                 {
-                    LevelName = group.Key.Level,
-                    FamilyName = group.Key.Family,
-                    TypeName = group.Key.Type,
-                    Count = group.Count(),
+                    Element = fi,
+                    LevelName = level,
+                    FamilyName = family,
+                    TypeName = type,
+                    Count = 1, // Each entry is a single instance
                     AvailableDetailTypes = new ObservableCollection<DetailTypeOption>(allDetailTypes),
                     SelectedDetailType = defaultOption ?? allDetailTypes.FirstOrDefault(),
-                    AhelaNr = ahelaNr
+                    AhelaNr = ahelaNr,
+                    Aadress = seadmeNr // Unique per instance
                 });
             }
-
 
             return entries;
         }

@@ -2,9 +2,8 @@
 using Autodesk.Revit.UI;
 using Schema.Collectors;
 using Schema.Setup;
-using EliteSheets.ExternalEvents;
-using Newtonsoft.Json;
 using Schema.ExternalEvents;
+using Newtonsoft.Json;
 using Schema.Helpers;
 using System;
 using System.Collections.Generic;
@@ -24,13 +23,6 @@ namespace Schema
     {
         private readonly Document _doc;
         private readonly UIDocument _uiDoc;
-
-        private object _lastSelectedNode = null;
-        private bool IsShiftPressed => Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
-        private bool IsCtrlPressed => Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
-        private const string ConfigFilePath = @"C:\ProgramData\RK Tools\Schema\config.json";
-
-        private readonly ExternalEvent _externalEvent;
         private readonly WindowResizer _windowResizer;
         private bool _isDarkMode = true;
         public ObservableCollection<LevelEntry> Levels { get; set; }
@@ -43,19 +35,19 @@ namespace Schema
         private DrawDetailLinesHandler drawLinesHandler;
         public ObservableCollection<FireAlarmEntry> FireAlarmElements { get; set; }
 
-        private ExternalEvent placeDetailItemsEvent;
-        private PlaceDetailItemsHandler placeDetailItemsHandler;
+        private readonly ExternalEvent placeDetailItemsEvent;
+        private readonly PlaceDetailItemsHandler placeDetailItemsHandler;
         private List<FamilySymbol> _availableTagTypes;
-        private ExternalEvent _placeControllerEvent;
-        private PlaceControllerHandler _placeControllerHandler;
-        private ExternalEvent _drawLinesEvent;
-        private DrawLinesHandler _drawLinesHandler;
+        private readonly ExternalEvent _placeControllerEvent;
+        private readonly PlaceControllerHandler _placeControllerHandler;
+        private readonly ExternalEvent _drawLinesEvent;
+        private readonly DrawLinesHandler _drawLinesHandler;
         private ConfigModel _config;
-        private string _viewKey => (ViewComboBox.SelectedItem as ViewDrafting)?.Name ?? "UnknownView";
-
+        private string ViewKey => (ViewComboBox.SelectedItem as ViewDrafting)?.Name ?? "UnknownView";
+        private bool _isLoaded = false;
         public int SectionCount { get; set; } = 1;
 
-        private string _projectKey
+        private string ProjectKey
         {
             get
             {
@@ -73,61 +65,63 @@ namespace Schema
 
         public MainWindow(UIDocument uiDoc)
         {
-            InitializeComponent();
-
-            _doc = uiDoc.Document;
-            _uiDoc = uiDoc;
-            Topmost = true;
-
-            this.Closed += Window1_Closed;
-
-
-            _windowResizer = new WindowResizer(this);
-
-            // Global mouse events for resizing
-            this.MouseMove += Window_MouseMove;
-            this.MouseLeftButtonUp += Window_MouseLeftButtonUp;
-
-            if (Application.ResourceAssembly == null)
+            try
             {
-                Application.ResourceAssembly = Assembly.GetExecutingAssembly();
+                InitializeComponent();
+
+                _doc = uiDoc.Document;
+                _uiDoc = uiDoc;
+                Topmost = true;
+
+                this.Closed += Window1_Closed;
+
+                _windowResizer = new WindowResizer(this);
+
+                this.MouseMove += Window_MouseMove;
+                this.MouseLeftButtonUp += Window_MouseLeftButtonUp;
+
+                if (Application.ResourceAssembly == null)
+                {
+                    Application.ResourceAssembly = Assembly.GetExecutingAssembly();
+                }
+
+                _config = ConfigManager.Load();
+
+                if (_config.WindowLeft.HasValue && _config.WindowTop.HasValue)
+                {
+                    this.WindowStartupLocation = WindowStartupLocation.Manual;
+                    this.Left = _config.WindowLeft.Value;
+                    this.Top = _config.WindowTop.Value;
+                }
+                else
+                {
+                    this.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+                }
+
+                LoadConfig();
+                LoadTheme();
+                LoadViewsIntoComboBox();
+
+                this.Focusable = true;
+                this.Focus();
+
+                InitializeDrawHandler();
+                placeDetailItemsHandler = new PlaceDetailItemsHandler();
+                placeDetailItemsEvent = ExternalEvent.Create(placeDetailItemsHandler);
+                _placeControllerHandler = new PlaceControllerHandler { UiDoc = _uiDoc };
+                _placeControllerEvent = ExternalEvent.Create(_placeControllerHandler);
+
+                _drawLinesHandler = new DrawLinesHandler { UiDoc = _uiDoc };
+                _drawLinesEvent = ExternalEvent.Create(_drawLinesHandler);
+
+                LoadControllerDetailTypes();
+                ConfigManager.Save(_config);
+                _config = ConfigManager.Load();
             }
-
-            _config = ConfigManager.Load();
-
-if (_config.WindowLeft.HasValue && _config.WindowTop.HasValue)
-{
-    this.WindowStartupLocation = WindowStartupLocation.Manual;
-    this.Left = _config.WindowLeft.Value;
-    this.Top = _config.WindowTop.Value;
-}
-else
-{
-    this.WindowStartupLocation = WindowStartupLocation.CenterScreen;
-}
-
-            LoadConfig();  // Load theme state before applying theme
-
-            LoadTheme();
-            LoadViewsIntoComboBox();
-
-
-            this.Focusable = true;
-            this.Focus(); // Ensures the window is ready to receive key events
-
-            InitializeDrawHandler();
-            placeDetailItemsHandler = new PlaceDetailItemsHandler();
-            placeDetailItemsEvent = ExternalEvent.Create(placeDetailItemsHandler);
-            _placeControllerHandler = new PlaceControllerHandler { UiDoc = _uiDoc };
-            _placeControllerEvent = ExternalEvent.Create(_placeControllerHandler);
-
-            _drawLinesHandler = new DrawLinesHandler { UiDoc = _uiDoc };
-            _drawLinesEvent = ExternalEvent.Create(_drawLinesHandler);
-
-            LoadControllerDetailTypes();
-            ConfigManager.Save(_config);      // no path param
-            _config = ConfigManager.Load();   // no path param
-
+            catch (Exception ex)
+            {
+                TaskDialog.Show("Startup Error", ex.ToString());
+            }
         }
         private string GetCurrentStage()
         {
@@ -154,7 +148,7 @@ else
             ProjectConfig projectConfig = null;
 
             // Try retrieve stage config
-            if (_config.Projects.TryGetValue(_projectKey, out var viewsDict) &&
+            if (_config.Projects.TryGetValue(ProjectKey, out var viewsDict) &&
                 viewsDict.TryGetValue(viewName, out var stagesDict) &&
                 stagesDict.TryGetValue(stageKey, out var loadedConfig))
             {
@@ -220,7 +214,7 @@ else
                 .WhereElementIsElementType()
                 .Cast<FamilySymbol>()
                 .Where(tag =>
-                    tag.Category?.Id.IntegerValue == (int)BuiltInCategory.OST_DetailComponentTags)
+                    tag.Category?.Id.Value == (long)BuiltInCategory.OST_DetailComponentTags)
                 .OrderBy(tag => $"{tag.FamilyName} : {tag.Name}")
                 .ToList();
 
@@ -254,6 +248,8 @@ else
                 MarginTextBox.Text = projectConfig.MarginMm.ToString(CultureInfo.InvariantCulture);
                 VerticalMarginTextBox.Text = projectConfig.VerticalMarginMm.ToString(CultureInfo.InvariantCulture);
                 TagParamater.Text = projectConfig.TagParameterName;
+                ItemsInRow.Text = projectConfig.ItemsInRow.ToString();
+                RowOffset.Text = projectConfig.RowOffset.ToString(CultureInfo.InvariantCulture);
             }
 
             // Restore Controller offset
@@ -273,6 +269,7 @@ else
 
             this.Focus();
             Keyboard.Focus(this);
+            _isLoaded = true;
         }
 
         private void Window_KeyDown(object sender, KeyEventArgs e)
@@ -337,7 +334,6 @@ else
             // Cleanup
             this.MouseMove -= Window_MouseMove;
             this.MouseLeftButtonUp -= Window_MouseLeftButtonUp;
-            _externalEvent?.Dispose();
         }
 
         
@@ -372,18 +368,18 @@ else
             string subsystemKey = subsystemKeyOverride ?? GetCurrentSubsystemKey(); // 👈 Use override if provided
 
             // Ensure project dictionary exists
-            if (!_config.Projects.ContainsKey(_projectKey))
-                _config.Projects[_projectKey] = new Dictionary<string, Dictionary<string, ProjectConfig>>();
+            if (!_config.Projects.ContainsKey(ProjectKey))
+                _config.Projects[ProjectKey] = new Dictionary<string, Dictionary<string, ProjectConfig>>();
 
             // Ensure view dictionary exists
-            if (!_config.Projects[_projectKey].ContainsKey(viewName))
-                _config.Projects[_projectKey][viewName] = new Dictionary<string, ProjectConfig>();
+            if (!_config.Projects[ProjectKey].ContainsKey(viewName))
+                _config.Projects[ProjectKey][viewName] = new Dictionary<string, ProjectConfig>();
 
             // Ensure stage config exists
-            if (!_config.Projects[_projectKey][viewName].ContainsKey(stageKey))
-                _config.Projects[_projectKey][viewName][stageKey] = new ProjectConfig();
+            if (!_config.Projects[ProjectKey][viewName].ContainsKey(stageKey))
+                _config.Projects[ProjectKey][viewName][stageKey] = new ProjectConfig();
 
-            var projectConfig = _config.Projects[_projectKey][viewName][stageKey];
+            var projectConfig = _config.Projects[ProjectKey][viewName][stageKey];
 
             // Save selected levels
             projectConfig.SelectedLevels = Levels
@@ -407,15 +403,13 @@ else
 
                 var subsystem = projectConfig.Subsystems[subsystemKey];
 
-                subsystem.SystemSelection = FireAlarmElements.ToDictionary(
-                    entry => $"{entry.FamilyName}|{entry.TypeName}|{entry.LevelName}|{entry.AhelaNr}",
-                    entry => entry.IsSelected
-                );
+                subsystem.SystemSelection = FireAlarmElements
+                    .GroupBy(entry => $"{entry.FamilyName}|{entry.TypeName}|{entry.LevelName}|{entry.AhelaNr}")
+                    .ToDictionary(g => g.Key, g => g.First().IsSelected);
 
-                subsystem.SystemSections = FireAlarmElements.ToDictionary(
-                    entry => $"{entry.FamilyName}|{entry.TypeName}|{entry.LevelName}|{entry.AhelaNr}",
-                    entry => entry.SectionNumber
-                );
+                subsystem.SystemSections = FireAlarmElements
+                    .GroupBy(entry => $"{entry.FamilyName}|{entry.TypeName}|{entry.LevelName}|{entry.AhelaNr}")
+                    .ToDictionary(g => g.Key, g => g.First().SectionNumber);
             }
 
             if (double.TryParse(StartOffsetTextBox.Text, out double startOffsetMm))
@@ -438,7 +432,10 @@ else
 
             if (ControllerTypeComboBox.SelectedItem is DetailTypeOption selectedControllerType)
                 projectConfig.ControllerDetailTypeId = selectedControllerType.Id;
-
+            if (int.TryParse(ItemsInRow.Text, out int itemsInRow))
+                projectConfig.ItemsInRow = itemsInRow;
+            if (double.TryParse(RowOffset.Text, out double rowOffset))
+                projectConfig.RowOffset = rowOffset;
             projectConfig.TagParameterName = TagParamater.Text.Trim();
             _config.IsDarkMode = _isDarkMode;
 
@@ -483,7 +480,6 @@ else
         {
             if (ViewComboBox.SelectedItem is ViewDrafting selectedView)
             {
-                string boundaryInfo = DrawingArea.GetBoundaryInfo(_doc, selectedView);
                 int scale = selectedView.Scale;
 
                 // Get raw width/height from DrawingArea
@@ -594,75 +590,117 @@ else
             drawLinesHandler = new DrawDetailLinesHandler();
             drawLinesEvent = ExternalEvent.Create(drawLinesHandler);
         }
-        public void LoadFireAlarmElements(Document doc)
+                private List<FireAlarmEntry> GetGroupedByAhelaNr(List<FireAlarmEntry> entries)
         {
-            var elements = new List<FireAlarmEntry>();
-
-            if (ATSCheckBox.IsChecked == true)
-            {
-                elements.AddRange(FireAlarmCollector.GetFireAlarmElements(doc));
-            }
-
-            if (VVSCheckBox.IsChecked == true)
-            {
-                elements.AddRange(VVSCollector.GetSecurityDeviceElements(doc)
-                    .Select(s => new FireAlarmEntry
+            // Group by AhelaNr and aggregate Count, keeping other fields from the first entry in each group
+            return entries
+                .GroupBy(e => e.AhelaNr)
+                .Select(g =>
+                {
+                    var first = g.First();
+                    return new FireAlarmEntry
                     {
-                        FamilyName = s.FamilyName,
-                        TypeName = s.TypeName,
-                        LevelName = s.LevelName,
-                        AhelaNr = s.AhelaNr,
-                        Count = s.Count,
-                        Element = s.Element
-                    }));
-            }
-
-            if (LPSCheckBox.IsChecked == true)
-            {
-                elements.AddRange(LPSCollector.GetSecurityDeviceElements(doc)
-                    .Select(s => new FireAlarmEntry
-                    {
-                        FamilyName = s.FamilyName,
-                        TypeName = s.TypeName,
-                        LevelName = s.LevelName,
-                        AhelaNr = s.AhelaNr,
-                        Count = s.Count,
-                        Element = s.Element
-                    }));
-            }
-
-            if (SHSCheckBox.IsChecked == true)
-            {
-                elements.AddRange(SHSCollector.GetSecurityDeviceElements(doc)
-                    .Select(s => new FireAlarmEntry
-                    {
-                        FamilyName = s.FamilyName,
-                        TypeName = s.TypeName,
-                        LevelName = s.LevelName,
-                        AhelaNr = s.AhelaNr,
-                        Count = s.Count,
-                        Element = s.Element
-                    }));
-            }
-
-            if (SideCheckBox.IsChecked == true)
-            {
-                elements.AddRange(SideCollector.GetSecurityDeviceElements(doc)
-                    .Select(s => new FireAlarmEntry
-                    {
-                        FamilyName = s.FamilyName,
-                        TypeName = s.TypeName,
-                        LevelName = s.LevelName,
-                        AhelaNr = s.AhelaNr,
-                        Count = s.Count,
-                        Element = s.Element
-                    }));
-            }
-
-            FireAlarmElements = new ObservableCollection<FireAlarmEntry>(elements);
-            SystemDataGrid.ItemsSource = FireAlarmElements;
+                        Element = first.Element,
+                        FamilyName = first.FamilyName,
+                        TypeName = first.TypeName,
+                        LevelName = first.LevelName,
+                        AhelaNr = first.AhelaNr,
+                        Count = g.Sum(e => e.Count),
+                        AvailableDetailTypes = first.AvailableDetailTypes,
+                        SelectedDetailType = first.SelectedDetailType,
+                        IsSelected = g.Any(e => e.IsSelected),
+                        SectionNumber = first.SectionNumber,
+                        Aadress = first.Aadress
+                    };
+                })
+                .ToList();
         }
 
+        private List<FireAlarmEntry> GetFlatFireAlarmEntries(List<FireAlarmEntry> groupedEntries)
+        {
+            var flatList = new List<FireAlarmEntry>();
+            foreach (var entry in groupedEntries)
+            {
+                for (int i = 0; i < entry.Count; i++)
+                {
+                    flatList.Add(new FireAlarmEntry
+                    {
+                        Element = entry.Element,
+                        FamilyName = entry.FamilyName,
+                        TypeName = entry.TypeName,
+                        LevelName = entry.LevelName,
+                        AhelaNr = entry.AhelaNr,
+                        Count = 1,
+                        AvailableDetailTypes = entry.AvailableDetailTypes,
+                        SelectedDetailType = entry.SelectedDetailType,
+                        IsSelected = entry.IsSelected,
+                        SectionNumber = entry.SectionNumber,
+                        Aadress = entry.Aadress
+                    });
+                }
+            }
+            return flatList;
+        }
+
+        private List<FireAlarmEntry> GetGroupedByLevelAhelaFamily(List<FireAlarmEntry> entries)
+        {
+            // Group by LevelName, then AhelaNr, then FamilyName, aggregate Count
+            return entries
+                .GroupBy(e => new { e.LevelName, e.AhelaNr, e.FamilyName })
+                .OrderBy(g => GetLevelSortKey(g.Key.LevelName)) // Sort by level, negative values first
+                .ThenBy(g => g.Key.AhelaNr)
+                .ThenBy(g => g.Key.FamilyName)
+                .Select(g =>
+                {
+                    var first = g.First();
+                    return new FireAlarmEntry
+                    {
+                        Element = first.Element,
+                        FamilyName = first.FamilyName,
+                        TypeName = first.TypeName,
+                        LevelName = first.LevelName,
+                        AhelaNr = first.AhelaNr,
+                        Count = g.Sum(e => e.Count),
+                        AvailableDetailTypes = first.AvailableDetailTypes,
+                        SelectedDetailType = first.SelectedDetailType,
+                        IsSelected = g.Any(e => e.IsSelected),
+                        SectionNumber = first.SectionNumber,
+                        Aadress = first.Aadress
+                    };
+                })
+                .ToList();
+        }
+
+        // Helper to sort levels, negative values first
+        private double GetLevelSortKey(string levelName)
+        {
+            // Try to parse elevation from level name, fallback to 0
+            var level = Levels?.FirstOrDefault(l => l.Name == levelName);
+            return level != null ? level.Elevation : 0;
+        }
+        public void LoadFireAlarmElements(Document doc)
+        {
+            var entries = FireAlarmCollector.GetFireAlarmElements(doc);
+
+            if (TPCheckBox.IsChecked == true)
+            {
+                FireAlarmElements = new ObservableCollection<FireAlarmEntry>(GetSortedFlatFireAlarmEntries(GetFlatFireAlarmEntries(entries)));
+            }
+            else // PP
+            {
+                FireAlarmElements = new ObservableCollection<FireAlarmEntry>(GetGroupedByLevelAhelaFamily(entries));
+            }
+            SystemDataGrid.ItemsSource = FireAlarmElements;
+        }
+        private List<FireAlarmEntry> GetSortedFlatFireAlarmEntries(List<FireAlarmEntry> entries)
+        {
+            return entries
+                .OrderBy(e => GetLevelSortKey(e.LevelName))
+                .ThenBy(e => e.AhelaNr)
+                .ThenBy(e => e.Aadress) // Seadme Nr
+                .ThenBy(e => e.FamilyName)
+                .ToList();
+        }
 
         private void HandleSubsystemCheckboxChange(string subsystemKey, CheckBox senderCheckbox)
         {
@@ -796,7 +834,7 @@ else
             string viewName = (ViewComboBox.SelectedItem as ViewDrafting)?.Name ?? "UnnamedView";
             string stageKey = GetCurrentStage();
 
-            if (_config.Projects.TryGetValue(_projectKey, out var viewsDict) &&
+            if (_config.Projects.TryGetValue(ProjectKey, out var viewsDict) &&
                 viewsDict.TryGetValue(viewName, out var stagesDict) &&
                 stagesDict.TryGetValue(stageKey, out var projectConfig))
             {
@@ -823,7 +861,8 @@ else
                         }
                     }
                 }
-
+                ItemsInRow.Text = projectConfig.ItemsInRow.ToString();
+                RowOffset.Text = projectConfig.RowOffset.ToString(CultureInfo.InvariantCulture);
                 // Restore other fields
                 TagOffsetTextBox.Text = projectConfig.TagOffsetMm.ToString(CultureInfo.InvariantCulture);
                 StartOffsetTextBox.Text = projectConfig.StartOffsetMm.ToString(CultureInfo.InvariantCulture);
@@ -862,7 +901,7 @@ else
                 return;
 
             // Parse tag offset (in mm), default to 150mm if invalid
-            double mmOffset = 150;
+            double mmOffset;
             if (!double.TryParse(TagOffsetTextBox.Text, out mmOffset))
                 mmOffset = 150;
 
@@ -889,10 +928,20 @@ else
             if (double.TryParse(VerticalMarginTextBox.Text, out double verticalMarginMm))
                 placeDetailItemsHandler.VerticalMarginMm = verticalMarginMm;
 
+            if (int.TryParse(ItemsInRow.Text, out int itemsInRow))
+                placeDetailItemsHandler.ItemsInRow = itemsInRow;
+            if (double.TryParse(RowOffset.Text, out double rowOffset))
+                placeDetailItemsHandler.RowOffset = rowOffset;
+
             placeDetailItemsHandler.SectionCount = SectionCount;
             placeDetailItemsHandler.TagParameterName = TagParamater.Text.Trim();
 
+            // Set the pattern based on the checkboxes
+            placeDetailItemsHandler.CurrentPattern = PPCheckBox.IsChecked == true
+                ? PlaceDetailItemsHandler.PlacementPattern.PP
+                : PlaceDetailItemsHandler.PlacementPattern.TP;
 
+            // Now raise the event to trigger placement
             placeDetailItemsEvent.Raise();
         }
         private void PlaceKSButton_Click(object sender, RoutedEventArgs e)
@@ -902,7 +951,8 @@ else
 
             if (ControllerTypeComboBox.SelectedItem is DetailTypeOption selectedOption)
             {
-                _placeControllerHandler.SelectedSymbolId = new ElementId(int.Parse(selectedOption.Id));
+                // Use Int64 for ElementId constructor to avoid obsolete warning
+                _placeControllerHandler.SelectedSymbolId = new ElementId(long.Parse(selectedOption.Id));
                 _placeControllerEvent.Raise();
             }
             else
@@ -910,7 +960,6 @@ else
                 TaskDialog.Show("Error", "Please select a controller detail item.");
             }
         }
-
         public class DetailTypeOption
         {
             public string DisplayName { get; set; }
@@ -930,7 +979,7 @@ else
                 .Select(f => new DetailTypeOption
                 {
                     DisplayName = $"{f.FamilyName} : {f.Name}",
-                    Id = f.Id.IntegerValue.ToString()
+                    Id = f.Id.Value.ToString()
                 })
                 .OrderBy(o => o.DisplayName)
                 .ToList();
@@ -947,6 +996,43 @@ else
             _drawLinesHandler.UiDoc = _uiDoc;
             _drawLinesEvent.Raise();
         }
+        private void PPCheckBox_Checked(object sender, RoutedEventArgs e)
+        {
+            if (!_isLoaded) return;
+            SaveConfig(); // Save current config before switching
+            if (TPCheckBox != null && TPCheckBox.IsChecked == true)
+                TPCheckBox.IsChecked = false;
+            placeDetailItemsHandler.CurrentPattern = PlaceDetailItemsHandler.PlacementPattern.PP;
+            LoadFireAlarmElements(_doc);
+            ApplyConfigToUI();
+        }
 
+        private void TPCheckBox_Checked(object sender, RoutedEventArgs e)
+        {
+            if (!_isLoaded) return;
+            SaveConfig(); // Save current config before switching
+            if (PPCheckBox != null && PPCheckBox.IsChecked == true)
+                PPCheckBox.IsChecked = false;
+            placeDetailItemsHandler.CurrentPattern = PlaceDetailItemsHandler.PlacementPattern.TP;
+            LoadFireAlarmElements(_doc);
+        }
+
+        private void PPCheckBox_Unchecked(object sender, RoutedEventArgs e)
+        {
+            if (!_isLoaded) return;
+            if (TPCheckBox != null && TPCheckBox.IsChecked == false)
+                TPCheckBox.IsChecked = true;
+        }
+
+        private void TPCheckBox_Unchecked(object sender, RoutedEventArgs e)
+        {
+            if (!_isLoaded) return;
+            if (PPCheckBox != null && PPCheckBox.IsChecked == false)
+                PPCheckBox.IsChecked = true;
+        }
+        private void SystemDataGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+
+        }
     }
 }
