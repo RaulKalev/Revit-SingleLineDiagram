@@ -27,7 +27,8 @@ namespace Schema
         private readonly WindowResizer _windowResizer;
         private bool _isDarkMode = true;
         public ObservableCollection<LevelEntry> Levels { get; set; }
-
+        private DateTime _lastEscapePress = DateTime.MinValue;
+        private const int EscapeDoublePressThresholdMs = 400;
 
         private double _detailLineHeight = 0.0; // Used for row spacing calculation
         private double _marginFromEdge = 10.0;
@@ -277,6 +278,12 @@ namespace Schema
         {
             if (e.Key == Key.Escape)
             {
+                var now = DateTime.Now;
+                if ((now - _lastEscapePress).TotalMilliseconds < EscapeDoublePressThresholdMs)
+                {
+                    this.Close();
+                }
+                _lastEscapePress = now;
             }
         }
 
@@ -630,31 +637,6 @@ namespace Schema
         {
             drawLinesHandler = new DrawDetailLinesHandler();
             drawLinesEvent = ExternalEvent.Create(drawLinesHandler);
-        }
-                private List<FireAlarmEntry> GetGroupedByAhelaNr(List<FireAlarmEntry> entries)
-        {
-            // Group by AhelaNr and aggregate Count, keeping other fields from the first entry in each group
-            return entries
-                .GroupBy(e => e.AhelaNr)
-                .Select(g =>
-                {
-                    var first = g.First();
-                    return new FireAlarmEntry
-                    {
-                        Element = first.Element,
-                        FamilyName = first.FamilyName,
-                        TypeName = first.TypeName,
-                        LevelName = first.LevelName,
-                        AhelaNr = first.AhelaNr,
-                        Count = g.Sum(e => e.Count),
-                        AvailableDetailTypes = first.AvailableDetailTypes,
-                        SelectedDetailType = first.SelectedDetailType,
-                        IsSelected = g.Any(e => e.IsSelected),
-                        SectionNumber = first.SectionNumber,
-                        Aadress = first.Aadress
-                    };
-                })
-                .ToList();
         }
 
         private List<FireAlarmEntry> GetFlatFireAlarmEntries(List<FireAlarmEntry> groupedEntries)
@@ -1060,13 +1042,47 @@ namespace Schema
         }
         private void DrawLines_Click(object sender, RoutedEventArgs e)
         {
-            _drawLinesHandler.SpacingMm = double.TryParse(SpacingTextBox.Text, out double spacingMm)
-                ? spacingMm
-                : 10.0;
+            if (_uiDoc == null)
+            {
+                TaskDialog.Show("Error", "Revit document is not available.");
+                return;
+            }
 
-            _drawLinesHandler.UiDoc = _uiDoc;
-            _drawLinesEvent.Raise();
+            var selectedView = ViewComboBox.SelectedItem as ViewDrafting;
+            if (selectedView == null)
+            {
+                TaskDialog.Show("Error", "Please select a drafting view.");
+                return;
+            }
+
+            if (!double.TryParse(MarginTextBox.Text, out double marginMm))
+            {
+                TaskDialog.Show("Error", "Invalid margin value.");
+                return;
+            }
+
+            if (!double.TryParse(SpacingTextBox.Text, out double spacingMm))
+            {
+                TaskDialog.Show("Error", "Invalid spacing value.");
+                return;
+            }
+
+            var selectedLevels = Levels?.Where(l => l.IsSelected).ToList();
+            if (selectedLevels == null || selectedLevels.Count == 0)
+            {
+                TaskDialog.Show("Info", "No levels selected.");
+                return;
+            }
+
+            drawLinesHandler.UiDoc = _uiDoc;
+            drawLinesHandler.TargetView = selectedView;
+            drawLinesHandler.MarginMm = marginMm;
+            drawLinesHandler.SpacingMm = spacingMm;
+            drawLinesHandler.SelectedLevels = selectedLevels;
+
+            drawLinesEvent.Raise();
         }
+
         private void PPCheckBox_Checked(object sender, RoutedEventArgs e)
         {
             if (!_isLoaded) return;

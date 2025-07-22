@@ -76,7 +76,10 @@ namespace Schema.Collectors
     {
         public static List<FireAlarmEntry> GetFireAlarmElements(Document doc)
         {
-            AccessDetailMappingReader.Load(@"C:\Users\mibil\EULE Dropbox\Raul Kalev\Me\Plugins\Schema\DetailMappings.accdb");
+            // Get current user's username and build the path dynamically
+            string userName = System.Environment.UserName;
+            string dbPath = $@"C:\Users\{userName}\EULE Dropbox\Raul Kalev\Me\Plugins\Schema\DetailMappings.accdb";
+            AccessDetailMappingReader.Load(dbPath);
 
             var entries = new List<FireAlarmEntry>();
 

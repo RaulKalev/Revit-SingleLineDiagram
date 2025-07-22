@@ -960,7 +960,7 @@
                                 Height="30"
                                 Margin="0,20,0,0"
                                 Click="DrawLines_Click"
-                                Content="Draw Lines"
+                                Content="Draw Level Lines"
                                 Style="{StaticResource CustomActionButtonStyle}" />
                         </StackPanel>
                         <!--  MainWindow.xaml  -->

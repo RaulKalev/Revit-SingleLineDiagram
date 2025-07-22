@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Data.OleDb;
+using System;
 
 namespace Schema
 {
@@ -13,27 +14,44 @@ namespace Schema
             if (_isLoaded) return;
             _isLoaded = true;
 
-            if (string.IsNullOrEmpty(dbPath))
+            try
             {
-                string assemblyDir = System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
-                dbPath = System.IO.Path.Combine(assemblyDir ?? string.Empty, "DetailMappings.accdb");
-            }
-
-            string connectionString = $@"Provider=Microsoft.ACE.OLEDB.12.0;Data Source={dbPath};Persist Security Info=False;";
-            using (var connection = new OleDbConnection(connectionString))
-            {
-                connection.Open();
-                var command = new OleDbCommand("SELECT FamilyName, TypeName, DetailFamily, DetailType FROM ATS", connection);
-                using (var reader = command.ExecuteReader())
+                if (string.IsNullOrEmpty(dbPath))
                 {
-                    while (reader.Read())
+                    dbPath = Environment.GetEnvironmentVariable("SCHEMA_DB_PATH");
+                    if (string.IsNullOrEmpty(dbPath))
                     {
-                        string key = $"{reader["FamilyName"]} : {reader["TypeName"]}";
-                        string value = $"{reader["DetailFamily"]} : {reader["DetailType"]}";
-                        if (!_mapping.ContainsKey(key))
-                            _mapping.Add(key, value);
+                        string username = Environment.UserName;
+                        dbPath = $@"C:\Users\{username}\EULE Dropbox\Raul Kalev\Me\Plugins\Schema\DetailMappings.accdb";
                     }
                 }
+
+                if (!System.IO.File.Exists(dbPath))
+                {
+                    Autodesk.Revit.UI.TaskDialog.Show("Database Error", $"DetailMappings.accdb not found:\n{dbPath}");
+                    return;
+                }
+
+                string connectionString = $@"Provider=Microsoft.ACE.OLEDB.12.0;Data Source={dbPath};Persist Security Info=False;";
+                using (var connection = new OleDbConnection(connectionString))
+                {
+                    connection.Open();
+                    var command = new OleDbCommand("SELECT FamilyName, TypeName, DetailFamily, DetailType FROM ATS", connection);
+                    using (var reader = command.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            string key = $"{reader["FamilyName"]} : {reader["TypeName"]}";
+                            string value = $"{reader["DetailFamily"]} : {reader["DetailType"]}";
+                            if (!_mapping.ContainsKey(key))
+                                _mapping.Add(key, value);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Autodesk.Revit.UI.TaskDialog.Show("Database Error", $"Failed to load detail mappings:\n{ex.Message}");
             }
         }
 
