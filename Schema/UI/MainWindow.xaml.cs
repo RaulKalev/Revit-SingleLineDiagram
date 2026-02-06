@@ -880,7 +880,7 @@ namespace Schema
                 stagesDict.TryGetValue(stageKey, out var projectConfig))
             {
                 string subsystemKey = GetCurrentSubsystemKey();
-                if (projectConfig.Subsystems.TryGetValue(subsystemKey, out var subsystem))
+                if (projectConfig.Subsystems.TryGetValue(subsystemKey, out var subsystem) && FireAlarmElements != null)
                 {
                     if (subsystem.SystemSelection != null)
                     {
