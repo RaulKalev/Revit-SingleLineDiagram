@@ -614,7 +614,7 @@
                                 Width="*"
                                 DisplayMemberPath="DisplayName"
                                 Header="Detail Symbol"
-                                SelectedItemBinding="{Binding SelectedDetailType}">
+                                SelectedItemBinding="{Binding SelectedDetailType, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
                                 <DataGridComboBoxColumn.ElementStyle>
                                     <Style TargetType="ComboBox">
                                         <Setter Property="ItemsSource" Value="{Binding AvailableDetailTypes}" />

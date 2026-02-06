@@ -17,6 +17,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.ComponentModel;
 
 namespace Schema
 {
@@ -183,31 +184,8 @@ namespace Schema
             UpdateSelectedCountLabel();
             LoadFireAlarmElements(_doc);
 
-            // ✅ Restore FireAlarmEntry selections
-            string subsystemKey = GetCurrentSubsystemKey();
-            if (projectConfig?.Subsystems != null &&
-                projectConfig.Subsystems.TryGetValue(subsystemKey, out var subsystem))
-            {
-                if (subsystem.SystemSelection != null)
-                {
-                    foreach (var entry in FireAlarmElements)
-                    {
-                        var key = $"{entry.FamilyName}|{entry.TypeName}|{entry.LevelName}|{entry.AhelaNr}";
-                        if (subsystem.SystemSelection.TryGetValue(key, out bool isSelected))
-                            entry.IsSelected = isSelected;
-                    }
-                }
-
-                if (subsystem.SystemSections != null)
-                {
-                    foreach (var entry in FireAlarmElements)
-                    {
-                        var key = $"{entry.FamilyName}|{entry.TypeName}|{entry.LevelName}|{entry.AhelaNr}";
-                        if (subsystem.SystemSections.TryGetValue(key, out int section))
-                            entry.SectionNumber = section;
-                    }
-                }
-            }
+            // Setup entries (restore config & subscribe)
+            SetupFireAlarmEntries();
 
 
             // Load available detail item tag types
@@ -665,6 +643,33 @@ namespace Schema
             return flatList;
         }
 
+        private List<FireAlarmEntry> GetGroupedByFamilyType(List<FireAlarmEntry> entries)
+        {
+            return entries
+                .GroupBy(e => new { e.FamilyName, e.TypeName })
+                .OrderBy(g => g.Key.FamilyName)
+                .ThenBy(g => g.Key.TypeName)
+                .Select(g =>
+                {
+                    var first = g.First();
+                    return new FireAlarmEntry
+                    {
+                        Element = first.Element,
+                        FamilyName = first.FamilyName,
+                        TypeName = first.TypeName,
+                        LevelName = "-",
+                        AhelaNr = "-",
+                        Count = g.Sum(e => e.Count),
+                        AvailableDetailTypes = first.AvailableDetailTypes,
+                        SelectedDetailType = first.SelectedDetailType,
+                        IsSelected = g.Any(e => e.IsSelected),
+                        SectionNumber = first.SectionNumber,
+                        Aadress = "-"
+                    };
+                })
+                .ToList();
+        }
+
         private List<FireAlarmEntry> GetGroupedByLevelAhelaFamily(List<FireAlarmEntry> entries)
         {
             // Group by LevelName, then AhelaNr, then FamilyName, then TypeName, aggregate Count
@@ -713,38 +718,19 @@ namespace Schema
             }
             else // PP
             {
-                FireAlarmElements = new ObservableCollection<FireAlarmEntry>(GetGroupedByLevelAhelaFamily(entries));
+                if (SortByFamilyCheckBox.IsChecked == true)
+                {
+                    FireAlarmElements = new ObservableCollection<FireAlarmEntry>(GetGroupedByFamilyType(entries));
+                }
+                else
+                {
+                    FireAlarmElements = new ObservableCollection<FireAlarmEntry>(GetGroupedByLevelAhelaFamily(entries));
+                }
             }
             ApplySorting();
 
-            // Restore selection and section state from config after loading
-            string subsystemKey = GetCurrentSubsystemKey();
-            string viewName = (ViewComboBox.SelectedItem as ViewDrafting)?.Name ?? "UnnamedView";
-            string stageKey = PPCheckBox.IsChecked == true ? "PP" : "TP";
-            if (_config.Projects.TryGetValue(ProjectKey, out var viewsDict) &&
-                viewsDict.TryGetValue(viewName, out var stagesDict) &&
-                stagesDict.TryGetValue(stageKey, out var projectConfig) &&
-                projectConfig.Subsystems.TryGetValue(subsystemKey, out var subsystem))
-            {
-                if (subsystem.SystemSelection != null)
-                {
-                    foreach (var entry in FireAlarmElements)
-                    {
-                        var key = $"{entry.FamilyName}|{entry.TypeName}|{entry.LevelName}|{entry.AhelaNr}";
-                        if (subsystem.SystemSelection.TryGetValue(key, out bool isSelected))
-                            entry.IsSelected = isSelected;
-                    }
-                }
-                if (subsystem.SystemSections != null)
-                {
-                    foreach (var entry in FireAlarmElements)
-                    {
-                        var key = $"{entry.FamilyName}|{entry.TypeName}|{entry.LevelName}|{entry.AhelaNr}";
-                        if (subsystem.SystemSections.TryGetValue(key, out int section))
-                            entry.SectionNumber = section;
-                    }
-                }
-            }
+            // Setup entries (restore config & subscribe)
+            SetupFireAlarmEntries();
         }
         private List<FireAlarmEntry> GetSortedFlatFireAlarmEntries(List<FireAlarmEntry> entries)
         {
@@ -1143,9 +1129,81 @@ namespace Schema
                 .FirstOrDefault(l => l.Name == name);
         }
 
+        private void SetupFireAlarmEntries()
+        {
+            if (FireAlarmElements == null) return;
+
+            string subsystemKey = GetCurrentSubsystemKey();
+            
+            // Try to find project config if not already loaded globally or pass it?
+            // Existing logic relied on local 'projectConfig'. We should try to get it from _config.
+            // Simplified logic: Get config for current view if possible.
+            
+            SubsystemConfig subsystem = null;
+            
+            if (ViewComboBox.SelectedItem is ViewDrafting selectedView)
+            {
+                 string viewName = selectedView.Name;
+                 string stageKey = PPCheckBox.IsChecked == true ? "PP" : "TP";
+                 
+                 if (_config.Projects.TryGetValue(ProjectKey, out var viewsDict) &&
+                    viewsDict.TryGetValue(viewName, out var stagesDict) &&
+                    stagesDict.TryGetValue(stageKey, out var loadedConfig))
+                 {
+                     if (loadedConfig.Subsystems != null && loadedConfig.Subsystems.TryGetValue(subsystemKey, out var sb))
+                     {
+                         subsystem = sb;
+                     }
+                 }
+            }
+
+            if (subsystem != null)
+            {
+                if (subsystem.SystemSelection != null)
+                {
+                    foreach (var entry in FireAlarmElements)
+                    {
+                        var key = $"{entry.FamilyName}|{entry.TypeName}|{entry.LevelName}|{entry.AhelaNr}";
+                        if (subsystem.SystemSelection.TryGetValue(key, out bool isSelected))
+                            entry.IsSelected = isSelected;
+                            
+                        // Subscribe to property changes for mapping persistence
+                        entry.PropertyChanged -= FireAlarmEntry_PropertyChanged; // Unsubscribe first just in case
+                        entry.PropertyChanged += FireAlarmEntry_PropertyChanged;
+                    }
+                }
+                else
+                {
+                     foreach (var entry in FireAlarmElements)
+                     {
+                        entry.PropertyChanged -= FireAlarmEntry_PropertyChanged;
+                        entry.PropertyChanged += FireAlarmEntry_PropertyChanged;
+                     }
+                }
+
+                if (subsystem.SystemSections != null)
+                {
+                    foreach (var entry in FireAlarmElements)
+                    {
+                        var key = $"{entry.FamilyName}|{entry.TypeName}|{entry.LevelName}|{entry.AhelaNr}";
+                        if (subsystem.SystemSections.TryGetValue(key, out int section))
+                            entry.SectionNumber = section;
+                    }
+                }
+            }
+            else
+            {
+                 foreach (var entry in FireAlarmElements)
+                 {
+                    entry.PropertyChanged -= FireAlarmEntry_PropertyChanged;
+                    entry.PropertyChanged += FireAlarmEntry_PropertyChanged;
+                 }
+            }
+        }
+
         private void SortByFamilyCheckBox_CheckedChanged(object sender, RoutedEventArgs e)
         {
-            ApplySorting();
+            if (_isLoaded) LoadFireAlarmElements(_doc);
         }
 
         private void ApplySorting()
@@ -1186,6 +1244,23 @@ namespace Schema
 
             FireAlarmElements = new ObservableCollection<FireAlarmEntry>(sorted);
             SystemDataGrid.ItemsSource = FireAlarmElements;
+        }
+        private void FireAlarmEntry_PropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(FireAlarmEntry.SelectedDetailType))
+            {
+                if (sender is FireAlarmEntry entry && entry.SelectedDetailType != null)
+                {
+                    try
+                    {
+                        string debugPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "schema_debug.txt");
+                        File.AppendAllText(debugPath, $"PropertyChanged Details changing for {entry.FamilyName}\n");
+                    }
+                    catch {} // ignore logging errors
+
+                    DetailMappingManager.SaveMapping(entry.FamilyName, entry.TypeName, entry.SelectedDetailType.DisplayName);
+                }
+            }
         }
     }
 }

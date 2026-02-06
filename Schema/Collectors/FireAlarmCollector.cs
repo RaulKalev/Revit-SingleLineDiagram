@@ -101,6 +101,9 @@ namespace Schema.Collectors
                 .OrderBy(o => o.DisplayName)
                 .ToList();
 
+            // Load JSON mappings first
+            DetailMappingManager.Load();
+
             // Instead of grouping, create one FireAlarmEntry per FamilyInstance
             foreach (var fi in collector)
             {
@@ -110,7 +113,15 @@ namespace Schema.Collectors
                 string ahelaNr = fi.LookupParameter("Ahela nr.")?.AsString() ?? "";
                 string seadmeNr = fi.LookupParameter("Seadme Nr.")?.AsString() ?? "";
 
-                string defaultSymbolName = AccessDetailMappingReader.GetDetailSymbol(family, type);
+                // Priority 1: Check JSON override
+                string defaultSymbolName = DetailMappingManager.GetMappedSymbol(family, type);
+
+                // Priority 2: Fallback to Access DB if no JSON override
+                if (string.IsNullOrEmpty(defaultSymbolName))
+                {
+                     defaultSymbolName = AccessDetailMappingReader.GetDetailSymbol(family, type);
+                }
+
                 var defaultOption = allDetailTypes.FirstOrDefault(opt => opt.DisplayName == defaultSymbolName);
 
                 entries.Add(new FireAlarmEntry
