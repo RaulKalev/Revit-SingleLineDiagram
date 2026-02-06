@@ -500,6 +500,7 @@ namespace Schema
 
                 BoundaryInfoTextBlock.Text = $"Scale: 1:{scale}   •   {paperSizeInfo}";
                 UpdateSelectedCountLabel();
+                ApplyConfigToUI();
             }
             else
             {
@@ -1089,6 +1090,7 @@ namespace Schema
                 PPCheckBox.IsChecked = false;
             placeDetailItemsHandler.CurrentPattern = PlaceDetailItemsHandler.PlacementPattern.TP;
             LoadFireAlarmElements(_doc);
+            ApplyConfigToUI();
         }
 
         private void PPCheckBox_Unchecked(object sender, RoutedEventArgs e)
@@ -1261,6 +1263,10 @@ namespace Schema
                     DetailMappingManager.SaveMapping(entry.FamilyName, entry.TypeName, entry.SelectedDetailType.DisplayName);
                 }
             }
+        }
+        private void TextBox_LostFocus(object sender, RoutedEventArgs e)
+        {
+             SaveConfig();
         }
     }
 }

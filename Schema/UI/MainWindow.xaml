@@ -747,6 +747,7 @@
                                 Margin="10,-19,0,0"
                                 HorizontalAlignment="Right"
                                 VerticalAlignment="Center"
+                                LostFocus="TextBox_LostFocus"
                                 Style="{StaticResource CustomTextBoxStyle}"
                                 Text="10" />
                         </StackPanel>
@@ -770,6 +771,7 @@
                                 Margin="10,-19,0,0"
                                 HorizontalAlignment="Right"
                                 VerticalAlignment="Center"
+                                LostFocus="TextBox_LostFocus"
                                 Style="{StaticResource CustomTextBoxStyle}"
                                 Text="10" />
 
@@ -786,6 +788,7 @@
                                 Margin="10,-19,0,0"
                                 HorizontalAlignment="Right"
                                 VerticalAlignment="Center"
+                                LostFocus="TextBox_LostFocus"
                                 Style="{StaticResource CustomTextBoxStyle}"
                                 Text="10" />
 
@@ -802,6 +805,7 @@
                                 Margin="10,-19,0,0"
                                 HorizontalAlignment="Right"
                                 VerticalAlignment="Center"
+                                LostFocus="TextBox_LostFocus"
                                 Style="{StaticResource CustomTextBoxStyle}"
                                 Text="0" />
 
@@ -818,6 +822,7 @@
                                 Margin="10,-19,0,0"
                                 HorizontalAlignment="Right"
                                 VerticalAlignment="Center"
+                                LostFocus="TextBox_LostFocus"
                                 Style="{StaticResource CustomTextBoxStyle}"
                                 Text="10" />
 
@@ -834,6 +839,7 @@
                                 Margin="10,-19,0,0"
                                 HorizontalAlignment="Right"
                                 VerticalAlignment="Center"
+                                LostFocus="TextBox_LostFocus"
                                 Style="{StaticResource CustomTextBoxStyle}"
                                 Text="20" />
 
@@ -850,6 +856,7 @@
                                 Margin="10,-19,0,0"
                                 HorizontalAlignment="Right"
                                 VerticalAlignment="Center"
+                                LostFocus="TextBox_LostFocus"
                                 Style="{StaticResource CustomTextBoxStyle}"
                                 Text="500" />
                         </StackPanel>
@@ -873,6 +880,7 @@
                                 Margin="10,-19,0,0"
                                 HorizontalAlignment="Right"
                                 VerticalAlignment="Center"
+                                LostFocus="TextBox_LostFocus"
                                 Style="{StaticResource CustomTextBoxStyle}"
                                 Text="150"
                                 ToolTip="Offset from symbol in mm" />
@@ -890,6 +898,7 @@
                                 Margin="10,-19,0,0"
                                 HorizontalAlignment="Right"
                                 VerticalAlignment="Center"
+                                LostFocus="TextBox_LostFocus"
                                 Style="{StaticResource CustomTextBoxStyle}"
                                 Text="Comments"
                                 ToolTip="Set the paramater you want to tag." />
@@ -930,6 +939,7 @@
                                 Margin="10,-19,0,0"
                                 HorizontalAlignment="Right"
                                 VerticalAlignment="Center"
+                                LostFocus="TextBox_LostFocus"
                                 Style="{StaticResource CustomTextBoxStyle}"
                                 Text="150" />
 
