@@ -667,12 +667,13 @@ namespace Schema
 
         private List<FireAlarmEntry> GetGroupedByLevelAhelaFamily(List<FireAlarmEntry> entries)
         {
-            // Group by LevelName, then AhelaNr, then FamilyName, aggregate Count
+            // Group by LevelName, then AhelaNr, then FamilyName, then TypeName, aggregate Count
             return entries
-                .GroupBy(e => new { e.LevelName, e.AhelaNr, e.FamilyName })
+                .GroupBy(e => new { e.LevelName, e.AhelaNr, e.FamilyName, e.TypeName })
                 .OrderBy(g => GetLevelSortKey(g.Key.LevelName)) // Sort by level, negative values first
                 .ThenBy(g => g.Key.AhelaNr)
                 .ThenBy(g => g.Key.FamilyName)
+                .ThenBy(g => g.Key.TypeName)
                 .Select(g =>
                 {
                     var first = g.First();
