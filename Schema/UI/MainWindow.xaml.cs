@@ -714,7 +714,7 @@ namespace Schema
             {
                 FireAlarmElements = new ObservableCollection<FireAlarmEntry>(GetGroupedByLevelAhelaFamily(entries));
             }
-            SystemDataGrid.ItemsSource = FireAlarmElements;
+            ApplySorting();
 
             // Restore selection and section state from config after loading
             string subsystemKey = GetCurrentSubsystemKey();
@@ -1140,6 +1140,51 @@ namespace Schema
                 .OfClass(typeof(Level))
                 .Cast<Level>()
                 .FirstOrDefault(l => l.Name == name);
+        }
+
+        private void SortByFamilyCheckBox_CheckedChanged(object sender, RoutedEventArgs e)
+        {
+            ApplySorting();
+        }
+
+        private void ApplySorting()
+        {
+            if (FireAlarmElements == null || !FireAlarmElements.Any())
+            {
+                SystemDataGrid.ItemsSource = FireAlarmElements;
+                return;
+            }
+
+            IEnumerable<FireAlarmEntry> sorted;
+            if (SortByFamilyCheckBox.IsChecked == true)
+            {
+                sorted = FireAlarmElements
+                   .OrderBy(e => e.FamilyName)
+                   .ThenBy(e => e.TypeName)
+                   .ThenBy(e => GetLevelSortKey(e.LevelName))
+                   .ThenBy(e => e.AhelaNr);
+            }
+            else
+            {
+                if (PPCheckBox.IsChecked == true)
+                {
+                    sorted = FireAlarmElements
+                       .OrderBy(e => GetLevelSortKey(e.LevelName))
+                       .ThenBy(e => e.AhelaNr)
+                       .ThenBy(e => e.FamilyName);
+                }
+                else
+                {
+                    sorted = FireAlarmElements
+                       .OrderBy(e => GetLevelSortKey(e.LevelName))
+                       .ThenBy(e => e.AhelaNr)
+                       .ThenBy(e => e.Aadress)
+                       .ThenBy(e => e.FamilyName);
+                }
+            }
+
+            FireAlarmElements = new ObservableCollection<FireAlarmEntry>(sorted);
+            SystemDataGrid.ItemsSource = FireAlarmElements;
         }
     }
 }

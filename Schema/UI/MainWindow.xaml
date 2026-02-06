@@ -715,6 +715,17 @@
 
                         </StackPanel>
 
+                        <CheckBox
+                            x:Name="SortByFamilyCheckBox"
+                            Margin="0,0,0,10"
+                            HorizontalAlignment="Center"
+                            Checked="SortByFamilyCheckBox_CheckedChanged"
+                            Content="Sort by Family"
+                            IsChecked="False"
+                            Style="{StaticResource CustomCheckboxStyle}"
+                            ToolTip="Sort tables by family and type"
+                            Unchecked="SortByFamilyCheckBox_CheckedChanged" />
+
 
                         <TextBlock
                             Margin="0,0,0,10"
